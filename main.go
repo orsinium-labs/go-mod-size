@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -110,8 +111,23 @@ func run() error {
 		}
 	}
 
-	for name, dep := range deps {
-		println(name, dep.directSize, dep.approx, dep.totalSize)
+	// Sort.
+	sorted := make([]Dep, 0, len(deps))
+	for _, dep := range deps {
+		sorted = append(sorted, *dep)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].totalSize > sorted[j].totalSize
+	})
+
+	// Print.
+	for _, dep := range sorted {
+		direct := formatSize(dep.directSize)
+		total := formatSize(dep.totalSize)
+		if dep.approx {
+			total = "~" + total
+		}
+		fmt.Printf("%-80s %10s %10s\n", dep.name, direct, total)
 	}
 
 	return nil
@@ -138,4 +154,17 @@ func getSize(name string) (int64, error) {
 		return err
 	})
 	return size, err
+}
+
+func formatSize(b int64) string {
+	if b < 1024 {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(1024), 0
+	for n := b / 1024; n >= 1024; n /= 1024 {
+		div *= 1024
+		exp++
+	}
+	unit := "KMGTPE"[exp]
+	return fmt.Sprintf("%.1f%c", float64(b)/float64(div), unit)
 }
