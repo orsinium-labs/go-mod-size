@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -60,54 +59,22 @@ func run() error {
 	}
 
 	// Accumulate total sizes
-	allResolved := false
-	cycleDetected := false
-	attempts := 0
-	for !allResolved {
-		attempts += 1
-		if attempts > 10_000 {
-			return errors.New("max dependency depth is reached")
+	for !allResolved(deps) {
+		dep := pickUnresolvedDep(deps, 0)
+		if dep == nil {
+			for i := 1; dep == nil; i++ {
+				dep = pickUnresolvedDep(deps, i)
+			}
+			dep.approx = true
 		}
-		allResolved = true
-		someResolved := false
-		for _, parent := range deps {
-			if parent.resolved {
-				continue
-			}
 
-			// If any subdependency doesn't have its total size resolved,
-			// don't resolve this one just yet.
-			depResolved := true
-			for _, childName := range parent.deps {
-				child := deps[childName]
-				if child != nil && !child.resolved {
-					depResolved = false
-					break
-				}
+		dep.resolved = true
+		dep.totalSize = dep.directSize
+		for _, childName := range dep.deps {
+			child := deps[childName]
+			if child != nil {
+				dep.totalSize += child.totalSize
 			}
-			if !depResolved {
-				allResolved = false
-				if cycleDetected {
-					continue
-				}
-			}
-
-			someResolved = true
-			parent.approx = !depResolved
-			parent.resolved = true
-			parent.totalSize = parent.directSize
-			for _, childName := range parent.deps {
-				child := deps[childName]
-				if child != nil {
-					parent.totalSize += child.totalSize
-				}
-			}
-			if !depResolved {
-				break
-			}
-		}
-		if !someResolved {
-			cycleDetected = true
 		}
 	}
 
@@ -130,6 +97,37 @@ func run() error {
 		fmt.Printf("%-80s %10s %10s\n", dep.name, direct, total)
 	}
 
+	return nil
+}
+
+func allResolved(deps map[string]*Dep) bool {
+	for _, parent := range deps {
+		if !parent.resolved {
+			return false
+		}
+	}
+	return true
+}
+
+func pickUnresolvedDep(deps map[string]*Dep, allowUnresolved int) *Dep {
+	for _, parent := range deps {
+		if parent.resolved {
+			continue
+		}
+
+		// If any subdependency doesn't have its total size resolved,
+		// don't resolve this one just yet.
+		depsUnresolved := 0
+		for _, childName := range parent.deps {
+			child := deps[childName]
+			if child != nil && !child.resolved {
+				depsUnresolved++
+			}
+		}
+		if depsUnresolved <= allowUnresolved {
+			return parent
+		}
+	}
 	return nil
 }
 
